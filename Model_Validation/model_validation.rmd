@@ -1,0 +1,67 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+### Ryan Eisma
+### Model Validation
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(lubridate)
+bike <- read_csv("bike_cleaned-4.csv")
+```
+
+```{r}
+#alter
+bike = bike %>% mutate(dteday = mdy(dteday))
+bike = bike %>% mutate_if(is.character, as_factor)
+bike = bike %>% mutate(hr = as_factor(hr))
+str(bike)
+```
+
+```{r}
+# Create Training Split
+set.seed(1234)
+bike_split = initial_split(bike, prop = 0.70, strata =count)
+train = training(bike_split)
+test = testing(bike_split)
+# 1 - 12163 - Correct
+# 2 - B - Correct
+```
+
+```{r}
+bike_recipe = recipe(count ~ season + mnth + hr + holiday + weekday + temp + weathersit, train)
+
+lm_model = 
+  linear_reg() %>% 
+  set_engine("lm")
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(bike_recipe)
+
+lm_fit = fit(lm_wflow, train)
+
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+# 3 - 0.6209 - CHANGED
+```
+
+```{r}
+predict_train = predict(lm_fit, new_data = train)
+ggplot(predict_train, aes(x=.pred)) + geom_histogram()
+summary(predict_train)
+# A - True, B - False, C - True (This one is good). D. Don't check it
+```
+
+```{r}
+final = lm_fit %>% predict(test) %>% bind_cols(test) %>% metrics(truth = count, estimate = .pred)
+# 5 - 0.6271
+```
+

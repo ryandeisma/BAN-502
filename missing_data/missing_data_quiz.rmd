@@ -1,0 +1,58 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Week 4
+## Missing Data Quiz
+
+```{r}
+library(tidyverse)
+library(VIM)
+library(mice)
+library(skimr)
+```
+
+```{r}
+class_grades <- read_csv("class-grades.csv")
+str(class_grades)
+summary(class_grades)
+# 1 - Tutorial, Midterm, TakeHome, Final
+```
+
+```{r}
+vim_plot = aggr(class_grades, numbers = TRUE, prop = c(TRUE, FALSE),cex.axis=.7)
+# 2 - Yes, TakeHome and Midterm
+```
+
+
+```{r}
+# Row Wise Deletion
+class_rowdel = class_grades %>% drop_na() 
+# 3 - 89
+skim(class_rowdel)
+```
+
+```{r}
+class_coldel = class_grades %>% select(-Midterm, -Tutorial, -TakeHome, -Final)
+vim_plot2 = aggr(class_coldel, numbers = TRUE, prop = c(TRUE, FALSE),cex.axis=.7)
+skim(class_coldel)
+# 4 - 2
+```
+
+#5 
+
+The deletion of the rows with missing data from Task 3 has the more preferable outcome. Deleting the rows takes removes 10 individual observations, however, 89 of 99 observations are still available (roughly 90% of the starting data), as opposed to removing the columns, which removes 4 columns, leaving only prefix and assignment as the remaining variables. So, removing the rows leaves a significant amount of assorted data relative to the starting point, whereas removing columns, removes a significant portion of the total dataset, most of which did not contain a missing data piece. 
+
+```{r}
+set.seed(123)
+imp_class = mice(class_grades, m=5, method='pmm', printFlag=FALSE)
+summary(imp_class)
+```
+
+```{r}
+class_complete = complete(imp_class) 
+summary(class_complete)
+# 68.33
+```
+

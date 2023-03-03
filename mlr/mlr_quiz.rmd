@@ -1,0 +1,120 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+### Ryan Eisma
+### MLR
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(lmtest)
+library(glmnet)
+library(ggcorrplot)
+library(MASS)
+library(car)
+library(lubridate)
+library(splines)
+```
+
+```{r}
+#import
+bike <- read_csv("bike_cleaned-3.csv")
+```
+
+```{r}
+#alter
+bike = bike %>% mutate(dteday = mdy(dteday))
+bike = bike %>% mutate_if(is.character, as_factor)
+bike = bike %>% mutate(hr = as_factor(hr))
+str(bike)
+```
+
+```{r}
+bike2 = bike %>% dplyr::select("count", "windspeed", "hum", "atemp", "temp")
+ggpairs(bike2)
+cor(bike2)
+ggcorr(bike, label = "TRUE", label_round = 4) 
+#1 Temp
+```
+
+
+```{r}
+ggplot(bike, aes(x=hr, y=bike$count)) + geom_boxplot()
+ggplot(bike, aes(x=season, y=bike$count)) + geom_boxplot()
+# 2 - C Summer
+```
+
+```{r}
+m1 = recipe(count ~ hr, bike)
+m1
+
+lm_model = 
+  linear_reg() %>% 
+  set_engine("lm")
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(m1)
+
+lm_fit = fit(lm_wflow,bike)
+summary(lm_fit$fit$fit$fit)
+# 3 - 23
+# 4 - 0?
+# 5 - hr17
+```
+
+```{r}
+ggplot(bike, aes(x=temp, y=bike$count)) + geom_point()
+# 6 - a generally increase
+
+```
+
+```{r}
+m2 = recipe(count ~ hr + temp, bike)
+m2
+
+lm_wflow2 = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(m2)
+
+lm_fit2 = fit(lm_wflow2,bike)
+summary(lm_fit2$fit$fit$fit)
+# 7 - 31.748
+# 8 - 0.5886
+
+```
+
+```{r}
+m3 = recipe(count ~ temp + atemp, bike)
+m3
+
+lm_wflow3 = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(m3)
+
+lm_fit3 = fit(lm_wflow3,bike)
+summary(lm_fit3$fit$fit$fit)
+
+# 9 - 0.1638
+# 10 - A - temp ONLY
+# 11 - C Multicollinearity 
+eight = 19.17 + (1.83 * 1.98)
+```
+
+```{r}
+bike3 = bike %>% dplyr::select("count", "season", "mnth", "hr", "holiday", "weekday", "workingday", "weathersit", "temp", "atemp", "hum", "windspeed")
+```
+
+```{r}
+allmod = lm(count ~., bike3) #use the ~. to include all predictors rather than typing them all in
+summary(allmod)
+# 12 - B Weekday and Holiday
+# 13 - B workingday
+```
+

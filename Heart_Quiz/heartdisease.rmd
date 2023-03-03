@@ -1,0 +1,115 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Heart Quiz Final Model
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+```
+```{r}
+heart_disease <- read_csv("heart_disease-1.csv")
+str(heart_disease)
+summary(heart_disease)
+```
+
+
+```{r}
+heart = heart_disease %>% mutate(Sex = as_factor(Sex), ChestPainType = as_factor(ChestPainType), RestingECG = as_factor(RestingECG), ExerciseAngina = as_factor(ExerciseAngina), HeartDisease = as_factor(HeartDisease)) %>%  mutate(HeartDisease = fct_recode(HeartDisease, "No" = "0", "Yes" = "1" ))
+str(heart)
+summary(heart)
+```
+
+```{r}
+set.seed(12345)
+heart_split = initial_split(heart, prop = 0.7, strata = HeartDisease) 
+train = training(heart_split) 
+test = testing(heart_split)
+```
+
+```{r}
+set.seed(123)
+folds = vfold_cv(train, v = 5)
+```
+
+
+```{r}
+heart_recipe = recipe(HeartDisease ~., train) %>% 
+  step_dummy(all_nominal(),-all_outcomes())
+
+tree_model = decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart", model = TRUE) %>% 
+  set_mode("classification")
+
+tree_grid = expand.grid(cost_complexity = seq(0.001,0.01,by=0.001))
+
+heart_work = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(heart_recipe)
+
+tree_res = 
+  heart_work %>% 
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+    )
+
+tree_res
+```
+
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) 
+```
+```{r}
+best_tree = tree_res %>%
+  select_best("accuracy")
+
+best_tree
+```
+
+```{r}
+final_wf = 
+  heart_work %>% 
+  finalize_workflow(best_tree)
+```
+
+```{r}
+final_fit = fit(final_wf, train)
+
+tree = final_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree, tweak = 1.5) 
+```
+
+```{r}
+treepred = predict(final_fit, train, type = "class")
+head(treepred)
+```
+
+```{r}
+confusionMatrix(treepred$.pred_class,train$HeartDisease,positive="Yes") 
+```
+
+```{r}
+treepred_test = predict(final_fit, test, type = "class")
+head(treepred_test)
+```
+
+```{r}
+confusionMatrix(treepred_test$.pred_class,test$HeartDisease,positive="Yes") 
+```

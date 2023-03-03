@@ -1,0 +1,214 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Random Forests QUIZ
+
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(ranger)
+library(gridExtra)
+library(vip)
+```
+
+```{r}
+drug <- read_csv("drug_data-2.csv")
+str(drug)
+```
+
+```{r}
+names(drug) = c("ID", "Age", "Gender", "Education", "Country", "Ethnicity",
+"Nscore", "Escore", "Oscore", "Ascore", "Cscore", "Impulsive",
+"SS", "Alcohol", "Amphet", "Amyl", "Benzos", "Caff", "Cannabis",
+"Choc", "Coke", "Crack", "Ecstasy", "Heroin", "Ketamine", "Legalh",
+"LSD", "Meth", "Mushrooms", "Nicotine", "Semer", "VSA")
+drug[drug == "CL0"] = "No"
+drug[drug == "CL1"] = "No"
+drug[drug == "CL2"] = "Yes"
+drug[drug == "CL3"] = "Yes"
+drug[drug == "CL4"] = "Yes"
+drug[drug == "CL5"] = "Yes"
+drug[drug == "CL6"] = "Yes"
+
+```
+
+```{r}
+drug_clean = drug %>% mutate_at(vars(Age:Ethnicity), funs(as_factor)) %>%
+mutate(Age = factor(Age, labels = c("18_24", "25_34", "35_44", "45_54",
+"55_64", "65_"))) %>%
+mutate(Gender = factor(Gender, labels = c("Male", "Female"))) %>%
+mutate(Education = factor(Education, labels = c("Under16", "At16", "At17", "At18",
+"SomeCollege","ProfessionalCert",
+"Bachelors", "Masters",
+"Doctorate"))) %>%
+mutate(Country = factor(Country, labels = c("USA", "NewZealand", "Other", "Australia",
+"Ireland","Canada","UK"))) %>%
+mutate(Ethnicity = factor(Ethnicity, labels = c("Black", "Asian", "White",
+"White/Black", "Other",
+"White/Asian", "Black/Asian"))) %>%
+mutate_at(vars(Alcohol:VSA), funs(as_factor)) %>%
+select(-ID)
+str(drug_clean)
+```
+
+```{r}
+back_up_drugs = drug_clean
+drug_clean = drug_clean %>% select(!(Alcohol:Mushrooms)) %>% select(!(Semer:VSA))
+```
+
+```{r}
+summary(drug_clean)
+str(drug_clean)
+# 1 - False
+```
+
+```{r}
+set.seed(1234)
+drug_split = initial_split(drug_clean, prop = 0.7, strata = Nicotine)
+train = training(drug_split)
+test = testing(drug_split)
+# 2 - 1318
+```
+
+```{r}
+p1 = ggplot(train, aes(x = Age, fill = Nicotine)) + geom_bar(position = "fill")
+p2 = ggplot(train, aes(x = Gender, fill = Nicotine)) + geom_bar(position = "fill")
+p3 = ggplot(train, aes(x = Education, fill = Nicotine)) + geom_bar(position = "fill")
+p4 = ggplot(train, aes(x = Country, fill = Nicotine)) + geom_bar(position = "fill")
+grid.arrange(p1,p2,p3,p4)
+# 3 - True
+```
+
+```{r}
+p1 = ggplot(train, aes(x = Nicotine, y = Impulsive)) + geom_boxplot()
+p2 = ggplot(train, aes(x = Impulsive, y =Nicotine)) + geom_line()
+grid.arrange(p1,p2, ncol = 2)
+# 4 - True
+```
+Set up our folds for cross-validation  
+```{r}
+set.seed(123)
+rf_folds = vfold_cv(train, v = 5)
+```
+
+Random forest  
+```{r}
+nico_recipe = recipe(Nicotine ~., train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+rf_model = rand_forest(mtry = tune(), min_n = tune(), trees = 100) %>% 
+  set_engine("ranger", importance = "permutation") %>% 
+  set_mode("classification")
+
+nico_wflow = 
+  workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(nico_recipe)
+
+rf_grid = grid_regular(
+  mtry(range = c(2, 8)), 
+  min_n(range = c(5, 20)),
+  levels = 10
+)
+
+set.seed(123)
+
+rf_res = tune_grid(
+  nico_wflow,
+  resamples = rf_folds,
+  grid = 20 
+)
+```
+
+```{r}
+rf_res %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  select(mean, min_n, mtry) %>%
+  pivot_longer(min_n:mtry,
+    values_to = "value",
+    names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "Accuracy")
+# 5 - C 0.72
+```
+
+```{r}
+rf_res %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  mutate(min_n = factor(min_n)) %>%
+  ggplot(aes(mtry, mean, color = min_n)) +
+  geom_line(alpha = 0.5, size = 1.5) +
+  geom_point() +
+  labs(y = "Accuracy")
+```
+
+```{r}
+best_rf = select_best(rf_res, "accuracy")
+
+final_rf = finalize_workflow(
+  nico_wflow,
+  best_rf
+)
+
+final_rf
+```
+
+```{r}
+nico_fit = fit(nico_wflow, train)
+```
+
+```{r}
+#fit the finalized workflow to our training data
+final_rf_fit = fit(final_rf, train)
+```
+
+Check out variable importance
+```{r}
+final_rf_fit %>% pull_workflow_fit() %>% vip(geom = "point")
+# 6 - D - RANKED SS, Oscore, Cscore
+```
+
+```{r}
+trainpredrf = predict(final_rf_fit, train)
+head(trainpredrf)
+```
+
+Confusion matrix
+```{r}
+confusionMatrix(trainpredrf$.pred_class, train$Nicotine, 
+                positive = "Yes")
+# 7 - 0.9067
+# 8 - 0.6707
+
+```
+
+```{r}
+testpredrf = predict(final_rf_fit, test)
+head(testpredrf)
+confusionMatrix(testpredrf$.pred_class, test$Nicotine, 
+                positive = "Yes")
+# 9 - 0.6966 
+# 10 - B
+```
+
+
+Answer Key
+# 1 - False
+# 2 - 1318
+# 3 - True
+# 4 - True
+# 5 - C 0.72 ***** This was wrong
+# 6 - D - RANKED SS, Oscore, Cscore
+# 7 - 0.9067
+# 8 - 0.6707
+# 9 - 0.6966 
+# 10 - B

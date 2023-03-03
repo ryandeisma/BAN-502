@@ -1,0 +1,81 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+### Ryan Eisma
+### Simple Regression 
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(lmtest)
+```
+
+```{r}
+air = airquality
+str(air)
+# 1 - 153
+# 2 - 6
+# 3 - True
+# 4 - Ozone
+
+```
+```{r}
+air2 = air %>% drop_na()
+# 5 - 111
+# 6 - 6
+ggpairs(air2)
+cor(air2)
+# 7 - Temp
+# 8 - Day
+ggplot(air2, aes(x=Temp,y=Ozone)) + geom_point()
+# 9 - C
+# 10 - 2.4391
+```
+
+```{r}
+mod1 = lm(Ozone ~ Temp, air2) #create linear regression model
+summary(mod1)
+m1 = recipe(Ozone ~ Temp, air2)
+m1
+# 11 -  0.488
+# 12 - Yes temp is sig. p = 2e-16
+
+```
+
+```{r}
+lm_model = 
+  linear_reg() %>% 
+  set_engine("lm") 
+```
+
+```{r}
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(m1)
+```
+
+```{r}
+lm_fit = fit(lm_wflow, air2)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+```{r}
+confint(lm_fit$fit$fit$fit)
+# 13 - True?
+```
+
+```{r}
+testdata = data.frame(Temp = c(80))
+predict(lm_fit, new_data = testdata)
+num_14 = -147.6461 + 2.4391 * 80
+#14 - 47.4819
+#15 - False
+```
+
+

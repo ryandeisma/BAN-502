@@ -1,0 +1,219 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Ryan Eisma
+## Log Regression Quiz 
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(ROCR)
+library(e1071)
+```
+
+```{r}
+parole <- read_csv("parole.csv")
+str(parole)
+summary(parole)
+```
+
+```{r}
+num1 = filter(parole, violator == 1 )
+men = filter(parole, male == 1)
+women = filter(parole, male == 0)
+m_v = filter(men, violator == 1)
+w_v = filter(women, violator == 1)
+# 1 - 78
+# 3 - True
+#     Men 1 in every 8.515625 violates parole 0.1174312
+#     Women 1 in every 9.2857 violate parole 0.1076923  
+```
+
+```{r}
+# Create Training Split
+set.seed(12345)
+parole_split = initial_split(parole, prop = 0.70, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+
+```
+
+```{r}
+#train = train %>% mutate(violator = fct_relevel(violator, c("No","Yes")))
+levels(train$violator)
+
+```
+
+```{r}
+cor(train)
+ggplot(num1, aes(x=male, y=violator)) + geom_col()
+ggplot(num1, aes(x=state, y=violator)) + geom_col()
+ggplot(parole, aes(x=state)) + geom_bar()
+# 4 - True
+ggplot(num1, aes(x=max.sentence, y=violator)) + geom_col()
+# 5 - False 
+
+```
+
+
+```{r}
+test$violator = as.factor(test$violator)
+test$state = as.factor(test$state)
+test$race = as.factor(test$race)
+test$multiple.offenses = as.factor(test$multiple.offenses)
+```
+
+```{r}
+train$violator = as.factor(train$violator)
+train$state = as.factor(train$state)
+parole_model = 
+  logistic_reg(mode = "classification") %>% 
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ state, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit$fit$fit$fit)
+# 6 - Other D
+# 7 - 278.95
+```
+
+```{r}
+train$race = as.factor(train$race)
+train$multiple.offenses = as.factor(train$multiple.offenses)
+train$violator = as.factor(train$violator)
+train$state = as.factor(train$state)
+parole2_model = 
+  logistic_reg(mode = "classification") %>% 
+  set_engine("glm")
+
+parole2_recipe = recipe(violator ~ state + multiple.offenses + race, train)
+
+p2_wf = workflow() %>%
+  add_recipe(parole2_recipe) %>% 
+  add_model(parole2_model)
+
+parole2_fit = fit(p2_wf, train)
+```
+
+```{r}
+summary(parole2_fit$fit$fit$fit)
+# 8 - A. B. C. - Not D
+```
+
+```{r}
+newdata = data.frame(state = 3, multiple.offenses = 1, race = 1)
+newdata$state = as.factor(newdata$state)
+newdata$multiple.offenses = as.factor(newdata$multiple.offenses)
+newdata$race = as.factor(newdata$race)
+
+predict(parole2_fit, newdata, type="prob")
+# 9 - 0.33 
+```
+
+
+```{r}
+predictions = predict(parole2_fit, train, type="prob") #develop predicted probabilities
+head(predictions)
+```
+
+```{r}
+predictions = predict(parole2_fit, train, type="prob")[2] #develop predicted probabilities
+head(predictions)
+```
+
+```{r}
+#Change this next line to the names of your predictions and the response variable in the training data frame
+ROCRpred = prediction(predictions, train$violator) 
+
+###You shouldn't need to ever change the next two lines:
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+as.numeric(performance(ROCRpred, "auc")@y.values)
+# 0.8460121
+```
+
+```{r}
+#Determine threshold to balance sensitivity and specificity
+#DO NOT modify this code
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+# sensitivity 0.7222222
+# specificity 0.8369305
+# cutoff      0.2015788
+# 10 0.2016
+```
+
+
+Test thresholds to evaluate accuracy  
+```{r}
+#confusion matrix
+#The "No" and "Yes" represent the actual values
+#The "FALSE" and "TRUE" represent our predicted values
+t1 = table(train$violator,predictions > 0.2015788)
+t1
+
+```
+
+Calculate accuracy  
+```{r}
+(t1[1,1]+t1[2,2])/nrow(train)
+# 0.8407643
+# 11 - 0.841
+# 12 - 0.722
+
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.2)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.3)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.4)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+# 13 - D
+```
+
+```{r}
+
+predictions_test = predict(parole2_fit, test, type="prob")[2]
+head(predictions_test)
+t2 = table(test$violator,predictions_test > 0.5)
+t2
+(t2[1,1]+t2[2,2])/nrow(test)
+# 14 - 0.897
+```

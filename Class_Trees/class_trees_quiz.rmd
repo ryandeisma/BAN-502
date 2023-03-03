@@ -1,0 +1,296 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Ryan Eisma
+## Class Trees Quiz
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+```
+
+```{r}
+heart_disease <- read_csv("heart_disease-1.csv")
+str(heart_disease)
+summary(heart_disease)
+```
+
+```{r}
+heart_data = heart_disease %>% mutate(Sex = as_factor(Sex), ChestPainType = as_factor(ChestPainType), RestingECG = as_factor(RestingECG), ExerciseAngina = as_factor(ExerciseAngina), HeartDisease = as_factor(HeartDisease)) %>%  mutate(HeartDisease = fct_recode(HeartDisease, "No" = "0", "Yes" = "1" ))
+str(heart_data)
+summary(heart_data)
+```
+
+
+```{r}
+set.seed(12345)
+heart_split = initial_split(heart_data, prop = 0.7, strata = HeartDisease) 
+train = training(heart_split) 
+test = testing(heart_split)
+# 1 - 642
+```
+
+```{r}
+heart_recipe = recipe(HeartDisease ~., train)
+
+tree_model = decision_tree() %>% 
+  set_engine("rpart", model = TRUE) %>%
+  set_mode("classification")
+
+heart_work = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(heart_recipe)
+
+heart_fit = fit(heart_work, train)
+```
+
+```{r}
+heart_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  
+```
+
+
+```{r}
+#extract the tree's fit from the fit object
+tree = heart_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+#plot the tree
+rpart.plot(tree)
+```
+
+```{r}
+#alternative
+fancyRpartPlot(tree) 
+# 2 - B. ST_Slope
+```
+
+```{r}
+heart_fit$fit$fit$fit$cptable
+# 3 - 0.01
+```
+
+```{r}
+treepred1 = predict(heart_fit, train, type = "class")
+head(treepred1)
+```
+
+
+```{r}
+confusionMatrix(treepred1$.pred_class,train$HeartDisease,positive="Yes") 
+```
+
+```{r}
+treepred_test1 = predict(heart_fit, test, type = "class")
+head(treepred_test)
+```
+
+```{r}
+confusionMatrix(treepred_test1$.pred_class,test$HeartDisease,positive="Yes")
+```
+
+Create our folds  
+```{r}
+set.seed(123)
+folds = vfold_cv(train, v = 5)
+```
+
+
+```{r}
+h_recipe = recipe(HeartDisease ~., train) 
+
+tree_model = decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart", model = TRUE) %>% 
+  set_mode("classification")
+
+
+hd_work = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(h_recipe)
+
+tree_res = 
+  hd_work %>% 
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+    )
+
+tree_res
+```
+
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) 
+# 4 - 0.81
+```
+
+```{r}
+best_tree = tree_res %>%
+  select_best("accuracy")
+
+best_tree
+# 5 - 0.0422 WRONG
+# 0.04216965
+# 0.04216965
+```
+
+```{r}
+best = tree_res %>%
+  select_best("accuracy")
+best
+```
+
+
+```{r}
+final_wf = 
+  hd_work %>% 
+  finalize_workflow(best)
+```
+
+```{r}
+final_fit = fit(final_wf, train)
+
+tree = final_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+rpart.plot(tree)
+# 6 - Yes
+```
+
+Predictions on training set  
+```{r}
+treepred2 = predict(final_fit, train, type = "class")
+head(treepred2)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(treepred2$.pred_class,train$HeartDisease,positive="Yes") #predictions first then actual
+# 7 - 0.8396 WRONG
+# 8 - 0.9183
+# 9 - 0.553
+```
+
+Predictions on testing set  
+```{r}
+treepred_test = predict(final_fit, test, type = "class")
+head(treepred_test)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(treepred_test$.pred_class,test$HeartDisease,positive="Yes")
+# 10 - 0.8261 WRONG
+```
+
+```{r}
+h3_recipe = recipe(HeartDisease ~., train)
+
+tree_model3 = decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart", model = TRUE) %>% 
+  set_mode("classification")
+
+tree_grid = expand.grid(cost_complexity = seq(0.001,0.01,by=0.001))
+
+h3_work = 
+  workflow() %>% 
+  add_model(tree_model3) %>% 
+  add_recipe(h3_recipe)
+
+tree_res = 
+  h3_work %>% 
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+    )
+
+tree_res
+```
+
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) 
+```
+
+```{r}
+bt = tree_res %>%
+  select_best("accuracy")
+
+bt
+# 5 - 0.009
+```
+
+
+```{r}
+final_wf = 
+  h3_work %>% 
+  finalize_workflow(bt)
+```
+
+```{r}
+final_fit = fit(final_wf, train)
+
+tree = final_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+rpart.plot(tree)
+```
+
+```{r}
+treepred3 = predict(final_fit, train, type = "class")
+head(treepred3)
+```
+
+```{r}
+confusionMatrix(treepred3$.pred_class,train$HeartDisease,positive="Yes") 
+# 7 - 0.866 
+# 8 - 0.9183
+# 9 - 0.553
+```
+
+Predictions on testing set  
+```{r}
+treepred_test = predict(final_fit, test, type = "class")
+head(treepred_test)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(treepred_test$.pred_class,test$HeartDisease,positive="Yes")
+# 10 - 0.8261 WRONG
+# 0.837
+```
+
+
+Answer Key
+1. 642
+2. ST_Slope
+3. 0.01
+4. 0.81
+5. 0.009
+6. Yes
+7. 0.866
+8. 0.9183
+9. 0.553
+10.0.8406
